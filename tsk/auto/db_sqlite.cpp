@@ -12,6 +12,8 @@
 * \file db_sqlite.cpp
 * Contains code to perform operations against SQLite database. 
 */
+//IPED PATCH
+#include "tsk_case_db.h"
 
 #include "tsk_db_sqlite.h"
 #include "sqlite3.h"
@@ -36,6 +38,8 @@ TskDbSqlite::TskDbSqlite(const char *a_dbFilePathUtf8, bool a_blkMapFlag)
     m_blkMapFlag = a_blkMapFlag;
     m_db = NULL;
     m_selectFilePreparedStmt = NULL;
+	//IPED Patch
+	m_selectFilePreparedStmt2 = NULL;
     m_insertObjectPreparedStmt = NULL;
 }
 
@@ -49,6 +53,8 @@ TskDbSqlite::TskDbSqlite(const TSK_TCHAR * a_dbFilePath, bool a_blkMapFlag)
     m_blkMapFlag = a_blkMapFlag;
     m_db = NULL;
     m_selectFilePreparedStmt = NULL;
+	//IPED Patch
+	m_selectFilePreparedStmt2 = NULL;
     m_insertObjectPreparedStmt = NULL;
 }
 #endif
@@ -429,12 +435,36 @@ int
     // enable finer result codes
     sqlite3_extended_result_codes(m_db, true);
 
+	//IPED PATCH
+	if (attempt_exec("PRAGMA synchronous = OFF;",
+		"Error setting PRAGMA synchronous: %s\n")) {
+		return 1;
+	}
+	if (attempt_exec("PRAGMA busy_timeout = 3600000;",
+		"Error setting PRAGMA busy_timeout: %s\n")) {
+		return 1;
+	}
+	if (attempt_exec("PRAGMA cache_size = 4000;",
+		"Error setting PRAGMA cache_size: %s\n")) {
+		return 1;
+	}
+	/*if (attempt_exec("PRAGMA journal_mode = WAL;",
+	"Error setting PRAGMA journal_mode: %s\n")) {
+	return 1;
+	}*/
+
     // create the tables if we need to
     if (a_toInit) {
         if (initialize())
             return 1;
     }
 
+	//IPED PATCH: cria indice para colunas consultadas em findParObjId
+	attempt_exec("CREATE INDEX findParent1 ON tsk_files(meta_addr, fs_obj_id);",
+		"Error creating findParent1 index on tsk_files: %s\n");
+	attempt_exec("CREATE INDEX findParent2 ON tsk_files(parent_path, name);",
+		"Error creating findParent2 index on tsk_files: %s\n");
+	
     if (setupFilePreparedStmt()) {
         return 1;
     }
@@ -453,6 +483,12 @@ int
         &m_selectFilePreparedStmt)) {
             return 1;
     }
+	//IPED PATCH
+	if (prepare_stmt
+	("SELECT obj_id FROM tsk_files WHERE meta_addr IS ? AND fs_obj_id IS ?",
+		&m_selectFilePreparedStmt2)) {
+		return 1;
+	}
     if (prepare_stmt
         ("INSERT INTO tsk_objects (obj_id, par_obj_id, type) VALUES (NULL, ?, ?)",
         &m_insertObjectPreparedStmt)) {
@@ -473,6 +509,11 @@ void
         sqlite3_finalize(m_selectFilePreparedStmt);
         m_selectFilePreparedStmt = NULL;
     }
+	//IPED Patch
+	if (m_selectFilePreparedStmt2 != NULL) {
+		sqlite3_finalize(m_selectFilePreparedStmt2);
+		m_selectFilePreparedStmt2 = NULL;
+	}
     if (m_insertObjectPreparedStmt != NULL) {
         sqlite3_finalize(m_insertObjectPreparedStmt);
         m_insertObjectPreparedStmt = NULL;
@@ -660,6 +701,10 @@ int
 //    return addFile(fs_file, fs_attr, path, fsObjId, parObjId, objId);
 //}
 
+//IPED PATCH
+int num_files = 0;
+int NUM_FILES_TO_COMMIT = 10000;
+int NUM_UNALLOC_TO_COMMIT = 100;
 
 /**
 * Add a file system file to the database
@@ -700,7 +745,15 @@ int
         }    
     }
 
-    return addFile(fs_file, fs_attr, path, md5, known, fsObjId, parObjId, objId, dataSourceObjId);
+	//IPED PATCH
+	int result = addFile(fs_file, fs_attr, path, md5, known, fsObjId, parObjId, objId, dataSourceObjId);
+
+	if (++num_files % NUM_FILES_TO_COMMIT == 0) {
+		releaseSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
+		createSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
+	}
+
+	return result;
 }
 
 
@@ -829,7 +882,32 @@ int64_t TskDbSqlite::findParObjId(const TSK_FS_FILE * fs_file, const char *paren
     {
         // Statement may be used again, even after error
         sqlite3_reset(m_selectFilePreparedStmt);
-        return -1;
+
+		fprintf(stderr, "Miss2: %s (%" PRIu64 " - %" PRIu64 ")\n", fs_file->name->name, fs_file->name->meta_addr,
+			fs_file->name->par_addr);
+
+		//IPED Patch
+		if (attempt(sqlite3_bind_int64(m_selectFilePreparedStmt2, 1, fs_file->name->par_addr),
+			"TskDbSqlite::findParObjId: Error binding meta_addr to statment: %s (result code %d)\n")
+			|| attempt(sqlite3_bind_int64(m_selectFilePreparedStmt2, 2, fsObjId),
+				"TskDbSqlite::findParObjId: Error binding fs_obj_id to statment: %s (result code %d)\n")
+			|| attempt(sqlite3_step(m_selectFilePreparedStmt2), SQLITE_ROW,
+				"TskDbSqlite::findParObjId: Error selecting file id by meta_addr: %s (result code %d)\n"))
+		{
+			fprintf(stderr, "Miss3: %s (%" PRIu64 " - %" PRIu64 ")\n", fs_file->name->name, fs_file->name->meta_addr,
+				fs_file->name->par_addr);
+
+			// Statement may be used again, even after error
+			sqlite3_reset(m_selectFilePreparedStmt2);
+
+			return -1;
+		}
+
+		int64_t parObjId = sqlite3_column_int64(m_selectFilePreparedStmt2, 0);
+
+		sqlite3_reset(m_selectFilePreparedStmt2);
+
+		return parObjId;
     }
 
     int64_t parObjId = sqlite3_column_int64(m_selectFilePreparedStmt, 0);
@@ -998,9 +1076,10 @@ int
     if((fs_attr != NULL)
            && (!(fs_file->meta->flags & TSK_FS_META_FLAG_COMP))
            && (fs_attr->flags & TSK_FS_ATTR_NONRES) 
-           && (fs_attr->nrd.allocsize >  fs_attr->size)){
+           //IPED PATCH tsk issue #756
+           && (fs_attr->nrd.allocsize >  fs_attr->nrd.initsize)){
         strncat(name, "-slack", 6);
-        TSK_OFF_T slackSize = fs_attr->nrd.allocsize - fs_attr->size;
+        TSK_OFF_T slackSize = fs_attr->nrd.allocsize - fs_attr->nrd.initsize;
 
         if (addObject(TSK_DB_OBJECT_TYPE_FILE, parObjId, objId)) {
             free(name);
@@ -1459,6 +1538,12 @@ TSK_RETVAL_ENUM TskDbSqlite::addFileWithLayoutRange(const TSK_DB_FILES_TYPE_ENUM
                 return TSK_ERR;
             }
     }
+
+	//IPED PATCH
+	if (++num_files % NUM_UNALLOC_TO_COMMIT == 0) {
+		releaseSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
+		createSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
+	}
 
     return TSK_OK;
 }

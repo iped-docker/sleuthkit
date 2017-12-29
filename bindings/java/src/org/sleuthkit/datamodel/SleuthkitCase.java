@@ -201,7 +201,7 @@ public class SleuthkitCase {
 		this.caseDirPath = new java.io.File(dbPath).getParentFile().getAbsolutePath();
 		this.connections = new SQLiteConnections(dbPath);
 		this.caseHandle = caseHandle;
-		init();
+		//init();
 		logSQLiteJDBCDriverInfo();
 	}
 
@@ -244,11 +244,11 @@ public class SleuthkitCase {
 		initBlackboardArtifactTypes();
 		initBlackboardAttributeTypes();
 		initNextArtifactId();
-
+		
 		updateDatabaseSchema(null);
-
+		
 		initStandardTagNames();
-
+		
 		CaseDbConnection connection = connections.getConnection();
 		initIngestModuleTypes(connection);
 		initIngestStatusTypes(connection);

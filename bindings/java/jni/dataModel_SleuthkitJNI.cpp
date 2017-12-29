@@ -1724,7 +1724,8 @@ Java_org_sleuthkit_datamodel_SleuthkitJNI_readFileNat(JNIEnv * env,
     TSK_OFF_T readOffset = (TSK_OFF_T) offset;
     if(offset_type == TSK_FS_FILE_READ_OFFSET_TYPE_START_OF_SLACK){
         readFlag = TSK_FS_FILE_READ_FLAG_SLACK;
-        readOffset += tsk_fs_attr->size;
+		//IPED PATCH tsk issue #756
+        readOffset += tsk_fs_attr->nrd.initsize;
     }
 
     //read attribute
@@ -2029,7 +2030,7 @@ JNIEXPORT jlong JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_findDeviceSize
  * @param imagePathJ the image path
  * @return true if the image can be processed, false otherwise
  */
-JNIEXPORT jboolean JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_isImageSupportedNat
+/*JNIEXPORT jboolean JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_isImageSupportedNat
   (JNIEnv * env, jclass obj, jstring imagePathJ) {
       
     TskIsImageSupported tskIsImage;
@@ -2060,4 +2061,4 @@ JNIEXPORT jboolean JNICALL Java_org_sleuthkit_datamodel_SleuthkitJNI_isImageSupp
     free(imagePaths);
 
     return (jboolean) result;
-}
+}*/

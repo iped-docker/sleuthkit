@@ -1655,6 +1655,9 @@ ntfs_proc_attrseq(NTFS_INFO * ntfs,
     const TSK_FS_ATTR *fs_attr_attrl = NULL;
     char name[NTFS_MAXNAMLEN_UTF8 + 1];
     TSK_FS_INFO *fs = (TSK_FS_INFO *) & ntfs->fs_info;
+	//IPED PATCH: Volume Shadow
+	const char *fileNameTmp = NULL;
+	uint64_t initsize;
 
     if (tsk_verbose)
         tsk_fprintf(stderr,
@@ -1993,13 +1996,38 @@ ntfs_proc_attrseq(NTFS_INFO * ntfs,
                     alen = ssize;
                 }
 
+				/* IPED PATCH Volume Shadow Files
+				* testing for VSS string: {3808876b-c176-4e48-b7ae-04046e6cc752} */
+				initsize = tsk_getu64(fs->endian, attr->c.nr.initsize);
+				if (ssize > 0 && initsize == 0 && type == NTFS_ATYPE_DATA && fileNameTmp != NULL) {
+					// testing for VSS string: {3808876b-c176-4e48-b7ae-04046e6cc752}
+					if (strstr(fileNameTmp, "{3808876b-c176-4e48-b7ae-04046e6cc752}") != NULL) {
+						initsize = ssize;
+						if (tsk_verbose)
+							tsk_fprintf(stderr, "ntfs_proc_attrseq: Init Size=0: VSS File: Non-Resident Type: %"
+								PRIu32 " Id: %" PRIu16 " IdNew: %" PRIu16
+								" name: %s Addr: " PRIuINUM "\n", type, id,
+								id_new, fileNameTmp, fs_file->meta->addr);
+					}
+					else {
+						if (tsk_verbose)
+							tsk_fprintf(stderr, "ntfs_proc_attrseq: Init Size=0: Not a VSS File: Non-Resident Type: %"
+								PRIu32 " Id: %" PRIu16 " IdNew: %" PRIu16
+								" name: %s Addr: " PRIuINUM "\n", type, id,
+								id_new, fileNameTmp, fs_file->meta->addr);
+					}
+				}
+
                 if (tsk_fs_attr_set_run(fs_file, fs_attr,
                         fs_attr_run, name,
                         type, id_new, ssize,
-                        tsk_getu64(fs->endian, attr->c.nr.initsize),
+						//IPED PATCH Volume Shadow
+						//tsk_getu64(fs->endian, attr->c.nr.initsize),
+						initsize,
                         alen, data_flag, compsize)) {
                     tsk_error_errstr2_concat("- proc_attrseq: set run");
-                    return TSK_ERR;
+					//IPED PATCH
+					return TSK_COR;
                 }
                 // set the special functions
                 if (fs_file->meta->flags & TSK_FS_META_FLAG_COMP) {
@@ -2011,7 +2039,8 @@ ntfs_proc_attrseq(NTFS_INFO * ntfs,
             else {
                 if (tsk_fs_attr_add_run(fs, fs_attr, fs_attr_run)) {
                     tsk_error_errstr2_concat(" - proc_attrseq: put run");
-                    return TSK_ERR;
+					//IPED PATCH
+					return TSK_COR;
                 }
             }
         }
@@ -2162,6 +2191,9 @@ ntfs_proc_attrseq(NTFS_INFO * ntfs,
 
             fs_name->par_inode = tsk_getu48(fs->endian, fname->par_ref);
             fs_name->par_seq = tsk_getu16(fs->endian, fname->par_seq);
+
+			//IPED Patch Volume Shadow
+			fileNameTmp = fs_name->name;
         }
 
         /* If this is an attribute list than we need to process
