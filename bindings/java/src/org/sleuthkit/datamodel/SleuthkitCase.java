@@ -211,7 +211,8 @@ public class SleuthkitCase {
 		this.databaseName = dbFile.getName();
 		this.connections = new SQLiteConnections(dbPath);
 		this.caseHandle = caseHandle;
-		init();
+		//IPED patch: optimization for robustImageReading
+		//init();
 		logSQLiteJDBCDriverInfo();
 	}
 

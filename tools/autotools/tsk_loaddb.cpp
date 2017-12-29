@@ -67,7 +67,8 @@ main(int argc, char **argv1)
     progname = argv[0];
     setlocale(LC_ALL, "");
 
-    while ((ch = GETOPT(argc, argv, _TSK_T("ab:d:hi:kvV"))) > 0) {
+	//IPED PATCH timezone
+	while ((ch = GETOPT(argc, argv, _TSK_T("ab:d:hi:kvVz:"))) > 0) {
         switch (ch) {
         case _TSK_T('?'):
         default:
@@ -122,6 +123,17 @@ main(int argc, char **argv1)
         case _TSK_T('V'):
             tsk_version_print(stdout);
             exit(0);
+
+		//IPED PATCH timezone
+		case _TSK_T('z'):
+			TSK_TCHAR envstr[32];
+			TSNPRINTF(envstr, 32, _TSK_T("TZ=%s"), OPTARG);
+			if (0 != TPUTENV(envstr)) {
+				tsk_fprintf(stderr, "error setting environment");
+				exit(1);
+			}
+			TZSET();
+			break;
         }
     }
 
@@ -160,7 +172,8 @@ main(int argc, char **argv1)
     TskAutoDb *autoDb = tskCase->initAddImage();
     autoDb->createBlockMap(blkMapFlag);
     autoDb->hashFiles(calcHash);
-    autoDb->setAddUnallocSpace(true);
+	//IPED PATCH
+	autoDb->setAddUnallocSpace(true, 500 * 1024 * 1024);
 
     if (autoDb->startAddImage(argc - OPTIND, &argv[OPTIND], imgtype, ssize)) {
         std::vector<TskAuto::error_record> errors = autoDb->getErrorList();

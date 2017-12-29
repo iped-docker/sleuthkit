@@ -30,6 +30,9 @@ TskAuto::TskAuto()
     m_internalOpen = false;
     m_curVsPartValid = false;
     m_curVsPartDescr = "";
+	//IPED patch: fixes loaddb crash
+	m_imageWriterEnabled = false;
+	m_imageWriterPath = NULL;
 }
 
 
