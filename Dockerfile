@@ -12,7 +12,8 @@ RUN apt-get update \
 COPY ./ /usr/local/src/sleuthkit/
 WORKDIR /usr/local/src/sleuthkit/
 RUN ./bootstrap
-RUN ./configure --prefix=/usr/
+RUN ./configure --prefix=/usr/local/src/sleuthkit/dist/
 RUN make
 RUN make install
-RUN make dist-gzip
+RUN tar czf sleuthkit.tar.gz -C ./dist/ . 
+RUN tar xf sleuthkit.tar.gz -C /
