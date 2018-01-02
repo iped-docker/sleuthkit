@@ -5,7 +5,7 @@ RUN apt-get update \
       build-essential automake autoconf libtool \
       libafflib-dev zlib1g-dev libewf-dev \
     && cd /tmp/ && apt-get download ant && dpkg-deb -x ant*.deb / \
-    && rm ant*.deb
+    && rm ant*.deb \
     && apt-get clean  \
     && rm -rf /var/lib/apt/lists/*
 
