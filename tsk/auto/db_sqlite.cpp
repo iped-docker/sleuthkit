@@ -12,6 +12,8 @@
 * \file db_sqlite.cpp
 * Contains code to perform operations against SQLite database. 
 */
+//IPED PATCH
+#include "tsk_case_db.h"
 
 #include "tsk_db_sqlite.h"
 #include "guid.h"
@@ -461,11 +463,29 @@ int
     // enable finer result codes
     sqlite3_extended_result_codes(m_db, true);
 
+	//IPED PATCH
+	if (attempt_exec("PRAGMA synchronous = OFF;",
+		"Error setting PRAGMA synchronous: %s\n")) {
+		return 1;
+	}
+	if (attempt_exec("PRAGMA busy_timeout = 3600000;",
+		"Error setting PRAGMA busy_timeout: %s\n")) {
+		return 1;
+	}
+	if (attempt_exec("PRAGMA cache_size = 4000;",
+		"Error setting PRAGMA cache_size: %s\n")) {
+		return 1;
+	}
+
     // create the tables if we need to
     if (a_toInit) {
         if (initialize())
             return 1;
     }
+
+	//IPED PATCH: cria indice para colunas consultadas em findParObjId
+	attempt_exec("CREATE INDEX findParent1 ON tsk_files(meta_addr, fs_obj_id, parent_path, name);",
+		"Error creating findParent1 index on tsk_files: %s\n");
 
     if (setupFilePreparedStmt()) {
         return 1;
@@ -692,6 +712,10 @@ int
 //    return addFile(fs_file, fs_attr, path, fsObjId, parObjId, objId);
 //}
 
+//IPED PATCH
+int num_files = 0;
+int NUM_FILES_TO_COMMIT = 10000;
+int NUM_UNALLOC_TO_COMMIT = 100;
 
 /**
 * Add a file system file to the database
@@ -732,7 +756,15 @@ int
         }    
     }
 
-    return addFile(fs_file, fs_attr, path, md5, known, fsObjId, parObjId, objId, dataSourceObjId);
+	//IPED PATCH
+	int result = addFile(fs_file, fs_attr, path, md5, known, fsObjId, parObjId, objId, dataSourceObjId);
+
+	if (++num_files % NUM_FILES_TO_COMMIT == 0) {
+		releaseSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
+		createSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
+	}
+
+	return result;
 }
 
 
@@ -859,6 +891,10 @@ int64_t TskDbSqlite::findParObjId(const TSK_FS_FILE * fs_file, const char *paren
         || attempt(sqlite3_step(m_selectFilePreparedStmt), SQLITE_ROW,
         "TskDbSqlite::findParObjId: Error selecting file id by meta_addr: %s (result code %d)\n"))
     {
+		//IPED patch: print missed files
+		fprintf(stderr, "Miss2: %s (%" PRIu64 " - %" PRIu64 ")\n", fs_file->name->name, fs_file->name->meta_addr,
+			fs_file->name->par_addr);
+
         // Statement may be used again, even after error
         sqlite3_reset(m_selectFilePreparedStmt);
         return -1;
@@ -1488,6 +1524,12 @@ TSK_RETVAL_ENUM TskDbSqlite::addFileWithLayoutRange(const TSK_DB_FILES_TYPE_ENUM
                 return TSK_ERR;
             }
     }
+
+	//IPED PATCH
+	if (++num_files % NUM_UNALLOC_TO_COMMIT == 0) {
+		releaseSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
+		createSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
+	}
 
     return TSK_OK;
 }

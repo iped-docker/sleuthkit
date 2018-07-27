@@ -171,7 +171,8 @@ main(int argc, char **argv1)
     TskAutoDb *autoDb = tskCase->initAddImage();
     autoDb->createBlockMap(blkMapFlag);
     autoDb->hashFiles(calcHash);
-    autoDb->setAddUnallocSpace(true);
+	//IPED PATCH
+	autoDb->setAddUnallocSpace(true, 500 * 1024 * 1024);
 
     if (autoDb->startAddImage(argc - OPTIND, &argv[OPTIND], imgtype, ssize)) {
         std::vector<TskAuto::error_record> errors = autoDb->getErrorList();
