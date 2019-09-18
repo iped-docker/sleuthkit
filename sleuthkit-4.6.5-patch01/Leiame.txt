@@ -1,0 +1,28 @@
+Patch no Sleuthkit 4.6.5 com otimizações.
+
+Aplique um dos seguintes patches e compile:
+tsk4.6.5-p01.patch
+ou
+tsk4.6.5-20190423-with-apfs-patch01.patch (sobre https://github.com/blackbagtech/sleuthkit-APFS em 20190423, para suporte a APFS)
+
+Cria índices em algumas colunas consultadas durante a geração do sqlite, agilizando bastante a criação
+do banco de dados em alguns casos.
+
+Permite processamento dos itens no IPED antes do término do tsk_loaddb, o que eventualmente demora,
+efetuando commit a cada 10mil itens no sqlite, além de instalar um busy_timeout_handler para permitir
+acesso concorrente ao banco (tsk_loaddb e iped) sem ocasionar erros.
+
+Por fim, agrupa setores não alocados não contíguos num mesmo item virtual de até 500MB, permitindo 
+o carving de itens fragmentados e diminuindo o número de itens não alocados no caso.
+
+Em sistemas Linux talvez seja necessário manualmente realizar o workaround descrito em
+https://github.com/sleuthkit/sleuthkit/issues/799
+
+---------------------------------
+
+Patch na libewf (https://github.com/sleuthkit/libewf_64bit) versão de 20170117 (contribuição PCF Pfeifer)
+
+O patch cria um cache de 64MB para os dados descompactados, evitando múltiplas descompactações dos mesmos dados se forem lidos
+repetidamente pelo sleuthkit. O patch pode acelerar em até 10x o processamento de imagens HFS+ compactadas.
+
+Importantíssimo aplicar ambos os patches! O segundo corrige o primeiro.

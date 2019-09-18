@@ -1,0 +1,124 @@
+diff --git a/tools/autotools/tsk_loaddb.cpp b/tools/autotools/tsk_loaddb.cpp
+index b59506d..fd422d0 100644
+--- a/tools/autotools/tsk_loaddb.cpp
++++ b/tools/autotools/tsk_loaddb.cpp
+@@ -171,7 +171,8 @@
+     TskAutoDb *autoDb = tskCase->initAddImage();
+     autoDb->createBlockMap(blkMapFlag);
+     autoDb->hashFiles(calcHash);
+-    autoDb->setAddUnallocSpace(true);
++	//IPED PATCH
++	autoDb->setAddUnallocSpace(true, (int64_t) 500 * 1024 * 1024);
+ 
+     if (autoDb->startAddImage(argc - OPTIND, &argv[OPTIND], imgtype, ssize)) {
+         std::vector<TskAuto::error_record> errors = autoDb->getErrorList();
+diff --git a/tsk/auto/db_sqlite.cpp b/tsk/auto/db_sqlite.cpp
+index 2e66072..e1eb110 100644
+--- a/tsk/auto/db_sqlite.cpp
++++ b/tsk/auto/db_sqlite.cpp
+@@ -12,6 +12,8 @@
+ * \file db_sqlite.cpp
+ * Contains code to perform operations against SQLite database. 
+ */
++//IPED PATCH
++#include "tsk_case_db.h"
+ 
+ #include "tsk_db_sqlite.h"
+ #include "guid.h"
+@@ -495,12 +497,30 @@
+     // enable finer result codes
+     sqlite3_extended_result_codes(m_db, true);
+ 
++	//IPED PATCH
++	if (attempt_exec("PRAGMA synchronous = OFF;",
++		"Error setting PRAGMA synchronous: %s\n")) {
++		return 1;
++	}
++	if (attempt_exec("PRAGMA busy_timeout = 3600000;",
++		"Error setting PRAGMA busy_timeout: %s\n")) {
++		return 1;
++	}
++	if (attempt_exec("PRAGMA cache_size = 4000;",
++		"Error setting PRAGMA cache_size: %s\n")) {
++		return 1;
++	}
++
+     // create the tables if we need to
+     if (a_toInit) {
+         if (initialize())
+             return 1;
+     }
+ 
++	//IPED PATCH: cria indice para colunas consultadas em findParObjId
++	attempt_exec("CREATE INDEX findParent1 ON tsk_files(meta_addr, fs_obj_id, parent_path, name);",
++		"Error creating findParent1 index on tsk_files: %s\n");
++
+     if (setupFilePreparedStmt()) {
+         return 1;
+     }
+@@ -725,6 +745,10 @@
+ //    return addFile(fs_file, fs_attr, path, fsObjId, parObjId, objId);
+ //}
+ 
++//IPED PATCH
++int num_files = 0;
++int NUM_FILES_TO_COMMIT = 10000;
++int NUM_UNALLOC_TO_COMMIT = 100;
+ 
+ /**
+ * Add a file system file to the database
+@@ -765,7 +789,15 @@
+         }    
+     }
+ 
+-    return addFile(fs_file, fs_attr, path, md5, known, fsObjId, parObjId, objId, dataSourceObjId);
++	//IPED PATCH
++	int result = addFile(fs_file, fs_attr, path, md5, known, fsObjId, parObjId, objId, dataSourceObjId);
++
++	if (++num_files % NUM_FILES_TO_COMMIT == 0) {
++		releaseSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
++		createSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
++	}
++
++	return result;
+ }
+ 
+ 
+@@ -892,6 +924,10 @@
+         || attempt(sqlite3_step(m_selectFilePreparedStmt), SQLITE_ROW,
+         "TskDbSqlite::findParObjId: Error selecting file id by meta_addr: %s (result code %d)\n"))
+     {
++		//IPED patch: print missed files
++		fprintf(stderr, "Miss2: %s (%" PRIu64 " - %" PRIu64 ")\n", fs_file->name->name, fs_file->name->meta_addr,
++			fs_file->name->par_addr);
++
+         // Statement may be used again, even after error
+         sqlite3_reset(m_selectFilePreparedStmt);
+         return -1;
+@@ -1522,6 +1558,12 @@
+             }
+     }
+ 
++	//IPED PATCH
++	if (++num_files % NUM_UNALLOC_TO_COMMIT == 0) {
++		releaseSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
++		createSavepoint(TSK_ADD_IMAGE_SAVEPOINT);
++	}
++
+     return TSK_OK;
+ }
+ 
+diff --git a/tsk/base/tsk_base.h b/tsk/base/tsk_base.h
+index 00dcf7a..1d68d6f 100644
+--- a/tsk/base/tsk_base.h
++++ b/tsk/base/tsk_base.h
+@@ -43,7 +43,8 @@
+ 
+ /** Version of code in string form. See TSK_VERSION_NUM for
+  * integer form. */
+-#define TSK_VERSION_STR "4.6.5"
++//IPED patch
++#define TSK_VERSION_STR "4.6.5-iped-patch01"
+ 
+ 
+ /* include the TSK-specific header file that we created in autoconf
